@@ -32,7 +32,7 @@
 
 int main (int argc, char** argv)
 {
-  ros::init(argc, argv, "PolarScanMatching Node");
+  ros::init(argc, argv, "PolarScanMatching_Node");
   PSMNode psmNode;
   ros::spin();
 }
@@ -231,13 +231,11 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
     change.getRotation().setRPY(0.0, 0.0, dTheta);
     imuMutex_.unlock();
   }
-
   PMScan * currPMScan = new PMScan(scan.ranges.size());
   rosToPMScan(scan, change, currPMScan);
-  
   try
-  {         
-    matcher_.pm_psm(prevPMScan_, currPMScan);                         
+  {
+    matcher_.pm_psm(prevPMScan_, currPMScan);
   }
   catch(int err)
   {
@@ -265,10 +263,8 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
   // **** publish the new estimated pose as a tf
    
   currWorldToBase = prevWorldToBase_ * baseToLaser_ * change * laserToBase_;
-
   if (publishTf_  ) publishTf  (currWorldToBase, scan.header.stamp);
   if (publishPose_) publishPose(currWorldToBase);
-
   // **** swap old and new
 
   delete prevPMScan_;
@@ -283,7 +279,7 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
   totalDuration_ += dur;
   double ave = totalDuration_/scansCount_;
 
-  ROS_INFO("dur:\t %.3f ms \t ave:\t %.3f ms", dur, ave);
+  //ROS_INFO("dur:\t %.3f ms \t ave:\t %.3f ms", dur, ave);
 }
 
 void PSMNode::publishTf(const tf::Transform& transform, 
@@ -318,7 +314,7 @@ void PSMNode::rosToPMScan(const sensor_msgs::LaserScan& scan,
   {
     if (scan.ranges[i] == 0) 
     {
-      pmScan->r[i] = 99999;  // hokuyo uses 0 for out of range reading
+      pmScan->r[i] = scan.range_max * ROS_TO_PM + 1;  // hokuyo uses 0 for out of range reading
     }
     else
     {

@@ -133,7 +133,7 @@ void PolarMatcher::pm_median_filter ( PMScan *ls )
 // if the next point is good and close -> it shouldn't make a difference
 void PolarMatcher::pm_segment_scan ( PMScan *ls )
 {
-  const PM_TYPE   MAX_DIST = 20.0;//max range diff between conseq. points in a seg
+  const PM_TYPE   MAX_DIST = 5.0;//max range diff between conseq. points in a seg
   PM_TYPE   dr;
   int       seg_cnt = 0;
   int       i,cnt;
@@ -743,7 +743,8 @@ PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *ne
           // and isn't a solitary point, then try to associate it ..
           //also fi[i] is within the angle range ...
 
-          if ( !new_bad[i] && !ref->bad[i+di] )
+          if ( !new_bad[i] && !ref->bad[i+di] &&
+	       !isnan(new_r[i]) && !isnan(ref->r[i+di]) )
           {
             e += fabs ( new_r[i]-ref->r[i+di] );
             n++;
@@ -763,16 +764,20 @@ PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *ne
       //later I can make it more robust
       //assumption: monomodal error function!
       PM_TYPE emin = 1000000;
-      int   imin;
+      int   imin = -1;
       for ( i=0;i<k;i++ )
-        if ( err[i]<emin )
+        if ( err[i]<emin && !isnan(err[i]))
         {
           emin = err[i];
           imin = i;
         }
-      if ( err[imin]>=10000 )
+      if ( imin == -1 || err[imin]>=10000 )
       {
-        cerr <<"Polar Match: orientation search failed" <<err[imin]<<endl;
+        if (imin == -1) {
+	  cerr << "Polar Match: orientation search failed - all points > max error" << endl;
+	} else {
+          cerr <<"Polar Match: orientation search failed - min error was " <<err[imin]<<endl;
+	}
         throw 1;
       }
       dth = beta[imin]*PM_DFI;
