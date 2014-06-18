@@ -273,13 +273,13 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
 
   // **** timing information - needed for profiling only
 
-  gettimeofday(&end, NULL);
+  /*gettimeofday(&end, NULL);
   double dur = ((end.tv_sec   * 1000000 + end.tv_usec  ) - 
                 (start.tv_sec * 1000000 + start.tv_usec)) / 1000.0;
   totalDuration_ += dur;
   double ave = totalDuration_/scansCount_;
 
-  //ROS_INFO("dur:\t %.3f ms \t ave:\t %.3f ms", dur, ave);
+  ROS_INFO("dur:\t %.3f ms \t ave:\t %.3f ms", dur, ave);*/
 }
 
 void PSMNode::publishTf(const tf::Transform& transform, 
@@ -312,18 +312,18 @@ void PSMNode::rosToPMScan(const sensor_msgs::LaserScan& scan,
 
   for (int i = 0; i < scan.ranges.size(); ++i)
   {
-    if (scan.ranges[i] == 0) 
+    // hokuyo uses NaN?? for out of range reading
+    if (isnan(scan.ranges[i])) 
     {
-      pmScan->r[i] = scan.range_max * ROS_TO_PM + 1;  // hokuyo uses 0 for out of range reading
+      pmScan->r[i] = scan.range_max * ROS_TO_PM + 1;
     }
     else
     {
       pmScan->r[i] = scan.ranges[i] * ROS_TO_PM;
       pmScan->x[i] = (pmScan->r[i]) * matcher_.pm_co[i];
       pmScan->y[i] = (pmScan->r[i]) * matcher_.pm_si[i];
-      pmScan->bad[i] = 0;
     }
-
+    
     pmScan->bad[i] = 0;
   }
 
