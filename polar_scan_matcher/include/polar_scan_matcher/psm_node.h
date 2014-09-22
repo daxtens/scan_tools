@@ -43,7 +43,6 @@
 #include "polar_scan_matcher/polar_match.h"
 
 const std::string imuTopic_  = "imu";
-const std::string scanTopic_ = "scan";
 const std::string poseTopic_ = "pose2D";
 
 const double ROS_TO_PM = 100.0;   // convert from cm to m
@@ -89,6 +88,7 @@ class PSMNode
     std::string worldFrame_;
     std::string baseFrame_;
     std::string laserFrame_;
+    std::string scanTopic_;
 
     void getParams();
     bool initialize(const sensor_msgs::LaserScan& scan);

@@ -30,6 +30,8 @@
 
 #include "polar_scan_matcher/psm_node.h"
 
+using namespace std;
+
 int main (int argc, char** argv)
 {
   ros::init(argc, argv, "PolarScanMatching_Node");
@@ -69,6 +71,8 @@ void PSMNode::getParams()
 
   // **** wrapper parameters
   
+  if (!nh_private.getParam ("scan_topic", scanTopic_))
+    scanTopic_ = "scan";
   if (!nh_private.getParam ("world_frame", worldFrame_))
     worldFrame_ = "world";
   if (!nh_private.getParam ("base_frame", baseFrame_))
@@ -325,6 +329,19 @@ void PSMNode::rosToPMScan(const sensor_msgs::LaserScan& scan,
     }
     
     pmScan->bad[i] = 0;
+
+    if (pmScan->r[i] < 0) {
+      /*cerr << "negative radius in rosToPMScan ";
+      if (scan.ranges[i] < 0) {
+	cerr << "from scan itself! " << scan.ranges[i];
+      } else {
+	cerr << "not from scan... " << scan.ranges[i] << " -> " << pmScan->r[i];
+      }
+      cerr << endl;
+      cerr << "Replacing with 0 (so it will get filtered...)" << endl;*/
+      pmScan->r[i] = 0;
+    }
+
   }
 
   matcher_.pm_median_filter  (pmScan);

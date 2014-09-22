@@ -102,6 +102,13 @@ void PolarMatcher::pm_median_filter ( PMScan *ls )
 
   int i,j,k,l;
 
+  for (i=0; i<PM_L_POINTS; i++) {
+    if (ls->r[i] < 0) {
+      cerr << "Negative radius entering pm_median_filter" << endl;
+      break;
+    }
+  }
+
   for ( i=0;i<PM_L_POINTS;i++ )
   {
     k=0;
@@ -122,6 +129,14 @@ void PolarMatcher::pm_median_filter ( PMScan *ls )
         }
     ls->r[i] = r[HALF_WINDOW];//choose the middle point
   }
+
+  for (i=0; i<PM_L_POINTS; i++) {
+    if (ls->r[i] < 0) {
+      cerr << "Negative radius leaving pm_median_filter" << endl;
+      break;
+    }
+  }
+
 }
 
 //-------------------------------------------------------------------------
@@ -505,6 +520,8 @@ PM_TYPE PolarMatcher::pm_psm_c ( PMScan *lsr,PMScan *lsa )
     dth *=PM_R2D;
   }//for iter
 
+  cout << "rx: " << ax << " ry: " << ay << " th: " << ath << endl;
+
   lsa->rx =ax;lsa->ry=ay;lsa->th=ath;
   return ( abs_err/n );
 }//pm_psm_c
@@ -542,8 +559,23 @@ PM_TYPE PolarMatcher::pm_psm ( PMScan *lsr,PMScan *lsa )
   ax = act.rx; ay = act.ry; ath = act.th;
   //from now on act.rx,.. express the lasers position in the ref frame
 
+  // sanity check
+  int i;
+  for (i=0; i<PM_L_POINTS; i++) {
+    if (ref.r[i] < 0) {
+      cerr << "Negative radius going in to pm_psm in ref" << endl;
+      break;
+    }
+  }
+  for (i=0; i<PM_L_POINTS; i++) {
+    if (act.r[i] < 0) {
+      cerr << "Negative radius going in to pm_psm in act" << endl;
+      break;
+    }
+  }
+
   iter = -1;
-  while ( ++iter<PM_MAX_ITER && small_corr_cnt<3 ) //has to be 5 small corrections before stop
+  while ( ++iter<PM_MAX_ITER && small_corr_cnt<5 ) //has to be 5 small corrections before stop
   {
     if ( ( fabs ( dx ) +fabs ( dy ) +fabs ( dth ) ) <PM_STOP_COND )
       small_corr_cnt++;
@@ -705,6 +737,16 @@ void PolarMatcher::pm_scan_project(const PMScan *act,  PM_TYPE   *new_r,  int *n
         }//while
       }//if act
     }//for i
+
+
+    // sanity check
+    for (i=1; i<PM_L_POINTS; i++) {
+      if (new_r[i] < 0) {
+	cerr << "Negative radius when leaving pm_scan_project" << endl;
+	break;
+      }
+    }
+
 }//pm_scan_project
 
 //-------------------------------------------------------------------------
@@ -715,11 +757,12 @@ void PolarMatcher::pm_scan_project(const PMScan *act,  PM_TYPE   *new_r,  int *n
 //! The functions estimates the orientation by finding that shift which minimizes the
 //! difference between the current and ref. scan. The orientation estimate is then
 //! refined using interpolation. 
+#define EMAX 1000000
 PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *new_r, const int *new_bad)
 {
       int i;
-      int       window       = PM_SEARCH_WINDOW;//20;//+- width of search for correct orientation
-      PM_TYPE   dth=0;//\actual scan corrections
+      int       window       = PM_SEARCH_WINDOW; //+- width of search for correct orientation
+      PM_TYPE   dth=0; // actual scan corrections
 
       //pm_fi,ref.r - reference points
       PM_TYPE e,err[PM_L_POINTS];       // the error rating
@@ -727,6 +770,17 @@ PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *ne
       PM_TYPE n;
       int k=0;
 
+    // sanity check
+    for (i=0; i<PM_L_POINTS; i++) {
+      if (new_r[i] < 0) {
+	cerr << "Negative radius when entering pm_orientation_search" << endl;
+	break;
+      }
+    }
+
+      /* For every possible angle in the window, determine the
+         error associated with it, placing the errors into err
+	 and the associated angles into beta */
       for ( int di=-window;di<=window;di++ )
       {
         n=0;e=0;
@@ -755,15 +809,16 @@ PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *ne
         if ( n>0 )
           err[k]  = e/n;//don't forget to correct with n!
         else
-          err[k]  = 10000;//don't forget to correct with n!
+          err[k]  = EMAX;//don't forget to correct with n!
         beta[k] = di;
         k++;
       }//for dfi
 
+      
       //now search for the global minimum
       //later I can make it more robust
       //assumption: monomodal error function!
-      PM_TYPE emin = 1000000;
+      PM_TYPE emin = EMAX;
       int   imin = -1;
       for ( i=0;i<k;i++ )
         if ( err[i]<emin && !isnan(err[i]))
@@ -771,8 +826,23 @@ PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *ne
           emin = err[i];
           imin = i;
         }
-      if ( imin == -1 || err[imin]>=10000 )
+      if ( imin == -1 || err[imin]>=EMAX )
       {
+	cerr << "error!" << endl;
+	cout << "orientation" << endl;
+	for (i=0;i<k;i++) {
+	  cout << beta[i]*PM_DFI << "\t";
+	}
+	cout << endl;
+	for (i=0;i<k;i++) {
+	  cout << new_r[i] << "\t";
+	}
+	cout << endl;
+	for (i=0;i<k;i++) {
+	  cout << ref->r[i] << "\t";
+	}
+	cout << endl;
+
         if (imin == -1) {
 	  cerr << "Polar Match: orientation search failed - all points > max error" << endl;
 	} else {
@@ -781,14 +851,14 @@ PM_TYPE PolarMatcher::pm_orientation_search(const PMScan *ref, const PM_TYPE *ne
         throw 1;
       }
       dth = beta[imin]*PM_DFI;
-
+      
       //interpolation
       if ( imin>=1 && imin< ( k-1 ) ) //is it not on the extreme?
       {
         //lets try interpolation
         PM_TYPE D = err[imin-1]+err[imin+1]-2.0*err[imin];
         PM_TYPE d=1000;
-        if ( fabs ( D ) >0.01 && err[imin-1]>err[imin] && err[imin+1]>err[imin] )
+	if ( fabs ( D ) >0.01 && err[imin-1]>err[imin] && err[imin+1]>err[imin] )
           d= ( err[imin-1]-err[imin+1] ) /D/2.0;
 
         if ( fabs ( d ) <1 )
@@ -855,6 +925,19 @@ PM_TYPE PolarMatcher::pm_translation_estimation(const PMScan *ref, const PM_TYPE
   }//for i
   if ( n<PM_MIN_VALID_POINTS ) //are there enough points?
   {
+
+	cout << "translation" << endl;
+
+	for (i=0;i<PM_L_POINTS;i++) {
+	  cout << new_r[i] << "\t";
+	}
+	cout << endl;
+	for (i=0;i<PM_L_POINTS;i++) {
+	  cout << ref->r[i] << "\t";
+	}
+	cout << endl;
+
+
     cerr <<"(i) pm_translation_estimation: ERROR not enough points" << n <<endl;
     throw 1;//not enough points
   }
