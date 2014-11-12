@@ -94,21 +94,6 @@ class PolarMatcher
 {
   private:
 
-    //calculates an error index expressing the quality of the match
-    //of the actual scan to the reference scan
-    //has to be called after scan matching so the actual scan in expressed
-    //in the reference scan coordinate system
-    //return the average minimum Euclidean distance; MAXIMUM RANGE points
-    //are not considered; number of non maximum range points have to be
-    //smaller than a threshold
-    PM_TYPE pm_error_index(PMScan *lsr,PMScan *lsa);
-
-    //estimates the covariance matrix(c11,c12,c22,c33) (x,y,th) of
-    //a scan match based on an error index (err-depends on how good the
-    //match is), and the angle of the corridor if it is a corridor
-    void pm_cov_est(PM_TYPE err, double *c11,double *c12, double *c22, double *c33,
-                        bool corridor=false, PM_TYPE corr_angle=0);
-
     void pm_scan_project(const PMScan *act,  PM_TYPE   *new_r,  int *new_bad);
     PM_TYPE pm_orientation_search(const PMScan *ref, const PM_TYPE *new_r, const int *new_bad);
     PM_TYPE pm_translation_estimation(const PMScan *ref, const PM_TYPE *new_r, const int *new_bad, PM_TYPE C, PM_TYPE *dx, PM_TYPE *dy);
@@ -178,6 +163,22 @@ class PolarMatcher
     //is used together with our association filter.
     //this is PSM-C in the tech report
     PM_TYPE pm_psm_c(PMScan *lsr,PMScan *lsa);
+
+    //calculates an error index expressing the quality of the match
+    //of the actual scan to the reference scan
+    //has to be called after scan matching so the actual scan in expressed
+    //in the reference scan coordinate system
+    //return the average minimum Euclidean distance; MAXIMUM RANGE points
+    //are not considered; number of non maximum range points have to be
+    //smaller than a threshold
+    PM_TYPE pm_error_index(PMScan *lsr,PMScan *lsa);
+
+    //estimates the covariance matrix(c11,c12,c22,c33) (x,y,th) of
+    //a scan match based on an error index (err-depends on how good the
+    //match is), and the angle of the corridor if it is a corridor
+    void pm_cov_est(PM_TYPE err, double *c11,double *c12, double *c22, double *c33,
+                        bool corridor=false, PM_TYPE corr_angle=0);
+
 };
 
 #endif //POLAR_SCAN_MATCHING_POLAR_MATCH_H

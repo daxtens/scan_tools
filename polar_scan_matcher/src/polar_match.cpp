@@ -344,7 +344,7 @@ PM_TYPE PolarMatcher::pm_error_index ( PMScan *lsr,PMScan *lsa )
   else
     return     HUGE_ERROR;
 
-  cout<<"pm_error_index: "<<n1<<" "<<dsum1<<" "<<n<<" "<<dsum<<endl;
+  //cout<<"pm_error_index: "<<n1<<" "<<dsum1<<" "<<n<<" "<<dsum<<endl;
 
   if ( n1>MIN_POINTS && n>MIN_POINTS )
   {
@@ -929,7 +929,7 @@ PM_TYPE PolarMatcher::pm_translation_estimation(const PMScan *ref, const PM_TYPE
 	cout << "translation" << endl;
 
 	for (i=0;i<PM_L_POINTS;i++) {
-	  cout << new_r[i] << "\t";
+	  cout << new_r[i] << " (" << new_bad[i] << ")\t";
 	}
 	cout << endl;
 	for (i=0;i<PM_L_POINTS;i++) {
@@ -938,7 +938,7 @@ PM_TYPE PolarMatcher::pm_translation_estimation(const PMScan *ref, const PM_TYPE
 	cout << endl;
 
 
-    cerr <<"(i) pm_translation_estimation: ERROR not enough points" << n <<endl;
+    cerr <<"(i) pm_translation_estimation: ERROR not enough points - " << n <<endl;
     throw 1;//not enough points
   }
 

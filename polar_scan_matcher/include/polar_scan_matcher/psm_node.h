@@ -39,11 +39,13 @@
 #include <sensor_msgs/LaserScan.h>
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/Pose2D.h>
+#include <nav_msgs/Odometry.h>
 
 #include "polar_scan_matcher/polar_match.h"
 
 const std::string imuTopic_  = "imu";
 const std::string poseTopic_ = "pose2D";
+const std::string odomTopic_ = "vo";
 
 const double ROS_TO_PM = 100.0;   // convert from cm to m
 
@@ -54,6 +56,7 @@ class PSMNode
     ros::Subscriber scanSubscriber_;
     ros::Subscriber imuSubscriber_;
     ros::Publisher  posePublisher_;
+    ros::Publisher  odomPublisher_;
 
     tf::TransformBroadcaster tfBroadcaster_;
     tf::TransformListener    tfListener_;
@@ -78,6 +81,7 @@ class PSMNode
     bool   publishPose_;
     bool   useTfOdometry_;
     bool   useImuOdometry_;
+    bool   publishOdom_;
 
     int    minValidPoints_;
     int    searchWindow_;
@@ -99,6 +103,12 @@ class PSMNode
     void publishTf(const tf::Transform& transform, 
                    const ros::Time& time);
     void publishPose(const tf::Transform& transform);
+    void publishOdom(const tf::Transform& transform,
+		     const ros::Time& time,
+		     const float cxx, const float cxy,
+		     const float cyy, const float ctt,
+		     const float dx, const float dy,
+		     const float dt);
 
     void rosToPMScan(const sensor_msgs::LaserScan& scan, 
                      const tf::Transform& change,
