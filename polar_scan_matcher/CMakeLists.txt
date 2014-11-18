@@ -43,3 +43,4 @@ install(TARGETS psm_node
 #rosbuild_add_executable(polar_scan_matcher src/psm_node.cpp 
 #                                           src/polar_match.cpp)
 
+#set(CMAKE_CXX_FLAGS "-pg")

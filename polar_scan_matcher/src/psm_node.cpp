@@ -30,9 +30,14 @@
 
 #include "polar_scan_matcher/psm_node.h"
 
+using namespace std;
+
+// TODO FIXME UGLY GLOBAL
+static ros::Time last_time;
+
 int main (int argc, char** argv)
 {
-  ros::init(argc, argv, "PolarScanMatching Node");
+  ros::init(argc, argv, "PolarScanMatching_Node");
   PSMNode psmNode;
   ros::spin();
 }
@@ -54,6 +59,7 @@ PSMNode::PSMNode()
   scanSubscriber_ = nh.subscribe (scanTopic_, 10, &PSMNode::scanCallback, this);
   imuSubscriber_  = nh.subscribe (imuTopic_,  10, &PSMNode::imuCallback,  this);
   posePublisher_  = nh.advertise<geometry_msgs::Pose2D>(poseTopic_, 10);
+  odomPublisher_  = nh.advertise<nav_msgs::Odometry>(odomTopic_, 10);
 }
 
 PSMNode::~PSMNode()
@@ -69,6 +75,8 @@ void PSMNode::getParams()
 
   // **** wrapper parameters
   
+  if (!nh_private.getParam ("scan_topic", scanTopic_))
+    scanTopic_ = "scan";
   if (!nh_private.getParam ("world_frame", worldFrame_))
     worldFrame_ = "world";
   if (!nh_private.getParam ("base_frame", baseFrame_))
@@ -77,6 +85,8 @@ void PSMNode::getParams()
     publishTf_ = true;
   if (!nh_private.getParam ("publish_pose", publishPose_))
     publishPose_ = true;
+  if (!nh_private.getParam ("publish_odom", publishOdom_))
+    publishOdom_ = true;
   if (!nh_private.getParam ("odometry_type", odometryType))
     odometryType = "none";
 
@@ -168,6 +178,9 @@ bool PSMNode::initialize(const sensor_msgs::LaserScan& scan)
   prevPMScan_ = new PMScan(scan.ranges.size());
   rosToPMScan(scan, t, prevPMScan_);
 
+  // *** save the time
+  last_time = ros::Time::now();
+  
   return true;
 }
 
@@ -231,19 +244,33 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
     change.getRotation().setRPY(0.0, 0.0, dTheta);
     imuMutex_.unlock();
   }
-
   PMScan * currPMScan = new PMScan(scan.ranges.size());
   rosToPMScan(scan, change, currPMScan);
-  
   try
-  {         
-    matcher_.pm_psm(prevPMScan_, currPMScan);                         
+  {
+    matcher_.pm_psm(prevPMScan_, currPMScan);
   }
   catch(int err)
   {
     ROS_WARN("Error in scan matching");
-    delete prevPMScan_;
-    prevPMScan_ = currPMScan;
+    if (publishOdom_)
+      publishOdom(prevWorldToBase_, scan.header.stamp, 
+		  999999, 999999, 999999, 999999,
+		  0, 0, 0);
+    // todo - replace with a heuristic as to which one is better!
+    /*int np = 0, nc = 0;
+    for (int i=0; i<scan.ranges.size(); i++) {
+      if (prevPMScan_->bad[i] == 0) np++;
+      if (currPMScan ->bad[i] == 0) nc++;
+    } 
+    if (nc>np) {
+    */  delete prevPMScan_;
+      prevPMScan_ = currPMScan;
+      /*cerr << "Kept current - " << nc << " v " << np << endl;
+      } else {
+      // keep prev - do nothing with current
+      cerr << "Kept previous - " << nc << " v " << np << endl;
+      }*/
     return;
   };    
 
@@ -265,10 +292,18 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
   // **** publish the new estimated pose as a tf
    
   currWorldToBase = prevWorldToBase_ * baseToLaser_ * change * laserToBase_;
-
   if (publishTf_  ) publishTf  (currWorldToBase, scan.header.stamp);
   if (publishPose_) publishPose(currWorldToBase);
 
+  // **** publish as full odometry if required:
+  if (publishOdom_) {
+    // todo, determine if we are in corridors?
+    PM_TYPE err;
+    double cxx, cxy, cyy, ctt;
+    err = matcher_.pm_error_index(prevPMScan_, currPMScan);
+    matcher_.pm_cov_est(err, &cxx, &cxy, &cyy, &ctt, false, 0);
+    publishOdom(currWorldToBase, scan.header.stamp, cxx, cxy, cyy, ctt, dx, dy, da);
+  }
   // **** swap old and new
 
   delete prevPMScan_;
@@ -277,13 +312,13 @@ void PSMNode::scanCallback(const sensor_msgs::LaserScan& scan)
 
   // **** timing information - needed for profiling only
 
-  gettimeofday(&end, NULL);
+  /*gettimeofday(&end, NULL);
   double dur = ((end.tv_sec   * 1000000 + end.tv_usec  ) - 
                 (start.tv_sec * 1000000 + start.tv_usec)) / 1000.0;
   totalDuration_ += dur;
   double ave = totalDuration_/scansCount_;
 
-  ROS_INFO("dur:\t %.3f ms \t ave:\t %.3f ms", dur, ave);
+  ROS_INFO("dur:\t %.3f ms \t ave:\t %.3f ms", dur, ave);*/
 }
 
 void PSMNode::publishTf(const tf::Transform& transform, 
@@ -301,6 +336,67 @@ void PSMNode::publishPose(const tf::Transform& transform)
   posePublisher_.publish(pose);
 }
 
+void PSMNode::publishOdom(const tf::Transform& transform,
+			  const ros::Time& time,
+			  const float cxx, const float cxy,
+			  const float cyy, const float ctt,
+			  const float dx, const float dy, const float dt) {
+
+  nav_msgs::Odometry odom;
+  tf::TransformBroadcaster odom_broadcaster;
+
+  tf::Matrix3x3 m(transform.getRotation());
+  double roll, pitch, yaw, x, y;
+  m.getRPY(roll, pitch, yaw);
+
+  x = transform.getOrigin().getX();
+  y = transform.getOrigin().getY();
+  
+  geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(yaw);
+
+  // there's almost certianly a better way to do this.
+  // we're just republishing the existing transform as odom_topic_
+  /*geometry_msgs::TransformStamped odom_trans;
+  odom_trans.header.stamp = time;
+  odom_trans.header.frame_id = odomTopic_;
+  odom_trans.child_frame_id = "world";
+
+  odom_trans.transform.translation.x = x;
+  odom_trans.transform.translation.y = y;
+  odom_trans.transform.translation.z = 0;
+  odom_trans.transform.rotation = odom_quat;
+  */
+  //odom_broadcaster.sendTransform(odom_trans);
+
+  odom.header.stamp = time;
+  odom.header.frame_id = odomTopic_;
+  odom.child_frame_id = "world";
+  odom.pose.pose.position.x = x;
+  odom.pose.pose.position.y = y;
+  odom.pose.pose.position.z = 0.0;
+  odom.pose.pose.orientation = odom_quat;
+
+
+  double dtime = (time - last_time).toSec(); 
+  odom.twist.twist.linear.x = dx / dtime;
+  odom.twist.twist.linear.y = dy / dtime;
+  odom.twist.twist.angular.z = dt / dtime;
+
+  //cout << cxx << " " << cxy << " " << cyy << endl;
+  odom.pose.covariance[0] = cxx / (ROS_TO_PM * ROS_TO_PM);
+  odom.pose.covariance[1] = cxy / (ROS_TO_PM * ROS_TO_PM);
+  odom.pose.covariance[6] = cxy / (ROS_TO_PM * ROS_TO_PM);
+  odom.pose.covariance[7] = cyy / (ROS_TO_PM * ROS_TO_PM);
+  odom.pose.covariance[35] = ctt;
+
+  // cheat
+  odom.pose.covariance[14] = 1e-6;
+  odom.pose.covariance[21] = 99999999;
+  odom.pose.covariance[28] = 99999999;
+
+  odomPublisher_.publish(odom);
+}
+
 void PSMNode::rosToPMScan(const sensor_msgs::LaserScan& scan, 
                           const tf::Transform& change,
                                 PMScan* pmScan)
@@ -316,22 +412,35 @@ void PSMNode::rosToPMScan(const sensor_msgs::LaserScan& scan,
 
   for (int i = 0; i < scan.ranges.size(); ++i)
   {
-    if (scan.ranges[i] == 0) 
+    // hokuyo uses NaN?? for out of range reading
+    if (isnan(scan.ranges[i])) 
     {
-      pmScan->r[i] = 99999;  // hokuyo uses 0 for out of range reading
+      pmScan->r[i] = scan.range_max * ROS_TO_PM + 1;
     }
     else
     {
       pmScan->r[i] = scan.ranges[i] * ROS_TO_PM;
       pmScan->x[i] = (pmScan->r[i]) * matcher_.pm_co[i];
       pmScan->y[i] = (pmScan->r[i]) * matcher_.pm_si[i];
-      pmScan->bad[i] = 0;
+    }
+    
+    pmScan->bad[i] = 0;
+
+    if (pmScan->r[i] < 0) {
+      /*cerr << "negative radius in rosToPMScan ";
+      if (scan.ranges[i] < 0) {
+	cerr << "from scan itself! " << scan.ranges[i];
+      } else {
+	cerr << "not from scan... " << scan.ranges[i] << " -> " << pmScan->r[i];
+      }
+      cerr << endl;
+      cerr << "Replacing with 0 (so it will get filtered...)" << endl;*/
+      pmScan->r[i] = -pmScan->r[i];
     }
 
-    pmScan->bad[i] = 0;
   }
 
-  matcher_.pm_median_filter  (pmScan);
+  //matcher_.pm_median_filter  (pmScan);
   matcher_.pm_find_far_points(pmScan);
   matcher_.pm_segment_scan   (pmScan);  
 }
